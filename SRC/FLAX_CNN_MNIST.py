@@ -1,5 +1,5 @@
-# This is me pulling a fully pre-made tutorial on convolutional neural networks to understand jax NN structure.
-
+# This is me pulling a mostly pre-made tutorial on convolutional neural networks to understand jax NN structure.
+# Custom commenting for my own understanding of system structure and as I look through documentation to understand jnp function syntax
 import jax
 import jax.numpy as jnp
 import optax
@@ -14,25 +14,25 @@ class CNN(nn.Module):
   """A simple CNN model."""
   @nn.compact
   def __call__(self, x):
-    x = nn.Conv(features=32, kernel_size=(3, 3))(x) # 3x3 kernel
-    x = nn.relu(x) # Rectified linear unit activation
-    x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2)) # Pool value by average
+    x = nn.Conv(features=32, kernel_size=(3, 3))(x)           # 3x3 kernel, features refers to the number of convolution filters
+    x = nn.relu(x)                                            # Rectified linear unit activation
+    x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))   # Pool value by average, reduces pixel size to 14x14
     x = nn.Conv(features=64, kernel_size=(3, 3))(x)
     x = nn.relu(x)
-    x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
-    x = x.reshape((x.shape[0], -1))  # flatten
-    x = nn.Dense(features=256)(x) # Fully connected layer
-    x = nn.relu(x) # Rectified Linear unit activation
-    x = nn.Dense(features=10)(x) # Outputs the likelihood of different being different features
+    x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))   # Same pooling, reduces down to 7 by 7
+    x = x.reshape((x.shape[0], -1))                           # flatten, -1 is to inherit size
+    x = nn.Dense(features=256)(x)                             # Fully connected layer, 256 outputs
+    x = nn.relu(x)                                            # Rectified Linear unit activation
+    x = nn.Dense(features=10)(x)                              # Outputs the likelihood of different being different features, 10 total labels
     return x
 
 def cross_entropy_loss(*, logits, labels):
-    labels_onehot = jax.nn.one_hot(labels, num_classes = 10) # One Hot classification
+    labels_onehot = jax.nn.one_hot(labels, num_classes = 10)  # One Hot classification for distinct labels where number does not correspond to any real value
     return optax.softmax_cross_entropy(logits=logits, labels=labels_onehot).mean()
 
 def compute_metrics(*, logits, labels):
     loss = cross_entropy_loss(logits = logits, labels=labels)
-    accuracy = jnp.mean(jnp.argmax(logits, -1 )==labels) # Checks if the highest probability classification matches label, and then averages the binaries to identify average accuracy
+    accuracy = jnp.mean(jnp.argmax(logits, -1 )==labels)      # Checks if the highest probability classification matches label, and then averages the binaries to identify average accuracy
     metrics = {
         'loss':loss,
         'accuracy':accuracy,
@@ -45,16 +45,16 @@ def get_datasets():
   ds_builder.download_and_prepare()
   train_ds = tfds.as_numpy(ds_builder.as_dataset(split='train', batch_size=-1))
   test_ds = tfds.as_numpy(ds_builder.as_dataset(split='test', batch_size=-1))
-  train_ds['image'] = jnp.float32(train_ds['image']) / 255. # Normalizes input data (Black and White image)
-  test_ds['image'] = jnp.float32(test_ds['image']) / 255. # Normalizes input data (Black and White image)
+  train_ds['image'] = jnp.float32(train_ds['image']) / 255.   # Normalizes input data (Black and White image)
+  test_ds['image'] = jnp.float32(test_ds['image']) / 255.     # Normalizes input data (Black and White image)
   return train_ds, test_ds
     
 def create_train_state(rng, learning_rate, momentum):
   """Creates initial `TrainState`."""
   cnn = CNN() # creates our neural network
-  params = cnn.init(rng, jnp.ones([1, 28, 28, 1]))['params']
-  #tx = optax.sgd(learning_rate, momentum)               # Stochastic Gradient Descent Optimizer
-  tx = optax.adam(learning_rate_adam)                    # Try Adam Solver
+  params = cnn.init(rng, jnp.ones([1, 28, 28, 1]))['params']  # 1 color channel, 28 by 28 pixels, 1 label per picture
+  tx = optax.sgd(learning_rate, momentum)                    # Stochastic Gradient Descent Optimizer
+  #tx = optax.adam(learning_rate_adam)                         # Try Adam Solver
   return train_state.TrainState.create(
       apply_fn=cnn.apply, params=params, tx=tx)
   
