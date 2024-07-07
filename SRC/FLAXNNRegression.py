@@ -1,10 +1,13 @@
 import jax
+from jax.lib import xla_bridge
 import jax.numpy as jnp
 import flax.linen as nn
 import optax
 from flax.training import train_state
 from jax import random
 import numpy as np
+
+
 
 # Define the model
 class MLP(nn.Module):
@@ -34,6 +37,12 @@ def train_step(state, batch):
     grads = jax.grad(mse_loss)(state.params, batch)
     state = state.apply_gradients(grads=grads)
     return state
+
+
+
+print(jax.default_backend)
+
+
 
 # Create the data
 key = random.PRNGKey(0)
