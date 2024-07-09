@@ -1,6 +1,8 @@
 import gymnasium as gym
 import random
 import math
+from itertools import count
+
 
 import torch
 import torch.nn as nn
@@ -49,7 +51,7 @@ class CartPoleNN(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-Transition = namedtuple('Transition','state','action','next_state','reward')
+Transition = namedtuple('Transition',('state','action','next_state','reward'))
 
 # Class that represent our memory
 class ReplayMemory(object):
@@ -81,11 +83,17 @@ Tau = 0.005
 device = torch.device('cpu')
 
 # Initialize Network
-Policymodel = CartPoleNN(observation_space = input_size, action_space = output_size).to(device)
-TargeModel = CartPoleNN(observation_space = input_size, action_space = output_size).to(device)
+PolicyModel = CartPoleNN(observation_space = input_size, action_space = output_size).to(device)
+PolicyDict = PolicyModel.state_dict()
+
+# Start by Copying PolicyModel on Initialization
+TargetModel = CartPoleNN(observation_space = input_size, action_space = output_size).to(device)
+TargetDict = PolicyDict
+TargetModel.load_state_dict(TargetDict)
+
 # Loss and Optimizer
 criterion = nn.SmoothL1Loss() # Choosing between multiple labels
-optimizer = optim.Adam(Policymodel.parameters(), lr= learning_rate)
+optimizer = optim.Adam(PolicyModel.parameters(), lr= learning_rate)
 
 memory = ReplayMemory(100000) # Creates memory object that allows for 10k game sessions
 
@@ -94,34 +102,101 @@ def ActionSelect(state):
     global steps_done # pulls the steps_done variable
     EpsilonCheck = random.random()
     
-    #eps_threshold = Eps_End + (Eps_Start-Eps_End) * math.exp(-1 * (steps_done/Eps_Decay)) # Random Chance value
-    eps_threshold = 0 # For testing purposes
-    
+    eps_threshold = Eps_End + (Eps_Start-Eps_End) * math.exp(-1 * (steps_done/Eps_Decay)) # Random Chance value
+    #eps_threshold = 0 # For testing purposes
     if EpsilonCheck > eps_threshold:
         # Do Policy Based Decision
-        state = torch.from_numpy(state)
-        state = torch.FloatTensor(state)
-        ActionLabels = Policymodel(state)
-        action = int(torch.argmax(ActionLabels))
+        ActionLabels = PolicyModel(state)
+        action = int(torch.argmax(ActionLabels)) # label with highest likelihood
     else:
+        # Do Random Action
         action = env.action_space.sample()
     steps_done += 1 # add 1 to steps_done variable
     return action
 
 
 Init_State = env.reset()
-Init_State = Init_State[0]
+Init_State = torch.FloatTensor(torch.from_numpy(Init_State[0]))
 Action = ActionSelect(Init_State)
 
 # The Optimization Function
 def optimize_model():
-    if len(memory) < batch_size: # returns nothing if memory is too small
+    if len(memory) < batch_size: # returns nothing if memory is too small to do training
         return
     transitions = memory.sample(batch_size) # samples batch_size entries from memory
+    batch = Transition(*zip(*transitions)) # 
     
+    # We need to do something if the batch.next_state is None
+    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device = device, dtype = torch.bool) # this creates a torch tensor to represent whether or not a next_state value in the batch is none
+    
+        # Create our system tensors (Note that torch.cat just takes the individual tensors and batch and makes one large tensor)
+    non_final_next_states = torch.stack([s for s in batch.next_state if s is not None]) # This creates a tensor of next_states,
+    state_batch = torch.stack(batch.state,) 
+    reward_batch = torch.stack(batch.reward)
+    action_batch = torch.stack(batch.reward)
+    
+    # Values we would have used given the PolicyModel
+    state_action_vals  = PolicyModel(state_batch)
+    
+    # Initialize next_state_values
+    next_state_values = torch.zeros(batch_size, device = device)
+    with torch.no_grad():
+        next_state_values = TargetModel(non_final_next_states)
+    print("Checkpoint")
+    
+    
+    
+num_episodes = 50
+EpisodeLen = 500
+
+# Somethine We'll plot later
+Episode_Durations = []
+
+for i_episode in range(num_episodes):
+    state, info =  env.reset()
+    state = torch.FloatTensor(torch.from_numpy(state))
+    
+    for t in count():
+        action = ActionSelect(state)
+        observe, reward, done, truncation, info = env.step(action)
+        reward = torch.tensor([reward], device = device)
+        done = done or truncation
+        
+        if truncation: # If stat action leads to end
+            next_state = None#
+        
+        else: # If State action doesn't end
+            next_state = torch.tensor(observe, dtype = torch.float32, device = device).unsqueeze(0) # put next state observation into the next_state, unsqueeze just reshapes to desired size
+        
+        memory.push(state, action, next_state, reward)
+        
+        # Optimize PolicyDict
+        optimize_model()
+        
+        PolicyDict = PolicyModel.state_dict()
+        TargetDict = TargetModel.state_dict()
+        
+        for key in PolicyDict: # After PolicyDict is updated, for each value, update TargetDict
+            TargetDict[key] = PolicyDict[key]*Tau + TargetDict[key]*(1-Tau)
+        
+        TargetModel.load_state_dict(TargetDict)
+
+        
+        if t == EpisodeLen:
+            break
 
 
-optimize_model()
+
+
+
+
+
+
+
+
+
+
+
 
 # def Random_or_PolicyGames(epsilon):
 #     RGames = 20             # 10 Games
