@@ -6,7 +6,7 @@ env = gym.make("Pendulum-v1", render_mode="human")
 
 ##
 model = SAC("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=10000, log_interval=4)
+model.learn(total_timesteps=1000, log_interval=4)
 model.save("sac_pendulum")
 
 del model # remove to demonstrate saving and loading
