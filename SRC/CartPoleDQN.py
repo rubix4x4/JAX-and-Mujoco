@@ -1,3 +1,4 @@
+# First Attempt at Learning, Trying a different tutorial
 import gymnasium as gym
 import random
 import math
@@ -51,7 +52,7 @@ class CartPoleNN(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-Transition = namedtuple('Transition',('state','action','next_state','reward'))
+Transition = namedtuple('Transition',('state','action','next_state','reward', 'terminated'))
 
 # Class that represent our memory
 class ReplayMemory(object):
@@ -126,25 +127,35 @@ def optimize_model():
     transitions = memory.sample(batch_size) # samples batch_size entries from memory
     batch = Transition(*zip(*transitions)) # 
     
-    # We need to do something if the batch.next_state is None
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device = device, dtype = torch.bool) # this creates a torch tensor to represent whether or not a next_state value in the batch is none
-    
-        # Create our system tensors (Note that torch.cat just takes the individual tensors and batch and makes one large tensor)
-    non_final_next_states = torch.stack([s for s in batch.next_state if s is not None]) # This creates a tensor of next_states,
     state_batch = torch.stack(batch.state,) 
     reward_batch = torch.stack(batch.reward)
-    action_batch = torch.stack(batch.reward)
-    
+    action_batch = torch.tensor(batch.action)
+    action_batch = action_batch.reshape(reward_batch.size())
+    terminated_batch = torch.tensor(batch.terminated)
+    terminated_batch = terminated_batch.reshape(reward_batch.size())
     # Values we would have used given the PolicyModel
-    state_action_vals  = PolicyModel(state_batch)
-    
-    # Initialize next_state_values
-    next_state_values = torch.zeros(batch_size, device = device)
+    current_q_list  = PolicyModel(state_batch)
     with torch.no_grad():
-        next_state_values = TargetModel(non_final_next_states)
+        target_q_list = TargetModel(state_batch)
+    # Initialize next_state_values
+    for index ,TermFlag in enumerate(terminated_batch):
+        if TermFlag:
+            print("Terminated")
+            target = reward_batch[index]
+        else:
+            print("Not Terminal")
+            target = reward_batch[index] + gamma*target_q_list[index].max()
+        target_q_list[index] = target
+    
+    criterion = nn.SmoothL1Loss()
+    loss = criterion(current_q_list, target_q_list)
+    optimizer.zero_grad()
+    loss.backward()
+    torch.nn.utils.clip_grad_value_(PolicyModel.parameters(),100)
+    optimizer.step()
     print("Checkpoint")
     
-    
+update_Rate = 10
     
 num_episodes = 50
 EpisodeLen = 500
@@ -158,9 +169,9 @@ for i_episode in range(num_episodes):
     
     for t in count():
         action = ActionSelect(state)
-        observe, reward, done, truncation, info = env.step(action)
+        observe, reward, terminated, truncation, info = env.step(action)
         reward = torch.tensor([reward], device = device)
-        done = done or truncation
+        done = terminated or truncation
         
         if truncation: # If stat action leads to end
             next_state = None#
@@ -168,7 +179,7 @@ for i_episode in range(num_episodes):
         else: # If State action doesn't end
             next_state = torch.tensor(observe, dtype = torch.float32, device = device).unsqueeze(0) # put next state observation into the next_state, unsqueeze just reshapes to desired size
         
-        memory.push(state, action, next_state, reward)
+        memory.push(state, action, next_state, reward, terminated)
         
         # Optimize PolicyDict
         optimize_model()
@@ -178,12 +189,12 @@ for i_episode in range(num_episodes):
         
         for key in PolicyDict: # After PolicyDict is updated, for each value, update TargetDict
             TargetDict[key] = PolicyDict[key]*Tau + TargetDict[key]*(1-Tau)
-        
         TargetModel.load_state_dict(TargetDict)
 
-        
-        if t == EpisodeLen:
+        if done:
             break
+        
+print("Complete")
 
 
 
