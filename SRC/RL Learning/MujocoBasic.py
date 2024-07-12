@@ -3,6 +3,7 @@
 import mujoco
 import os
 import numpy as np
+import mujoco.viewer
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -29,23 +30,27 @@ mujoco.mj_step(model,data)
 Timevec = []
 PosVec = []
 # Step through the model once
-for i in range(1000):
-    mujoco.mj_step(model,data)
-    data.ctrl = (i/100)*np.ones(4)
-    Timevec.append(data.time)
-    PosVec.append(data.qpos[2])
-    print('time ', data.time, 'position ', data.qpos[2])
+with mujoco.viewer.launch_passive(model,data) as viewer:
+    # View Settings
+    viewer.cam.distance = 10
+    viewer.cam.elevation = -15
+    for i in range(1000):
+        mujoco.mj_step(model,data)
+        viewer.sync()
+        data.ctrl = (i/100)*np.ones(4)
+        Timevec.append(data.time)
+        PosVec.append(data.qpos[2])
+        print('time ', data.time, 'position ', data.qpos[2])
 
 # NOTES
 # position and velocity vector are organized as follows
 # x y z , quaternion
 
-mujoco.mj_resetData(model,data)
+#mujoco.mj_resetData(model,data)
 
 plt.style.use('_mpl-gallery')
 fig, ax = plt.subplots()
 ax.plot(Timevec,PosVec, linewidth = 2.0)
 ax.set(xlim = (0,max(Timevec)), ylim = (0, max(PosVec)))
 
-plt.show()
 print("End")
