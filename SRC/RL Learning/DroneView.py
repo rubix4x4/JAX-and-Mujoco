@@ -1,16 +1,12 @@
 import gymnasium as gym
+import os
 from stable_baselines3 import SAC
+from MujocoDroneFolder.MujocoDroneEnv import MjDroneEnv
+import time
 
-env = gym.make("Pendulum-v1", render_mode="human")
-
-##
-model = SAC("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=1000, log_interval=4)
-model.save("sac_pendulum")
-
-del model # remove to demonstrate saving and loading
-
-model = SAC.load("sac_pendulum")
+env = MjDroneEnv(render_mode = 'human')
+models_dir = f"models/MjDrone2/435000"
+model = SAC.load(models_dir)
 
 obs, info = env.reset()
 while True:

@@ -56,6 +56,11 @@ class MjDroneEnv(gym.Env):
         
         self.truncation = self.trunc_func()     # Compuite if truncated
         info = {}
+        
+        # Penalize early termination
+        if self.truncation:
+            self.reward = self.reward -50
+        
         # obs, reward, terminated, truncated, info
         return self.observation, self.reward, self.termination, self.truncation, info
     
@@ -67,25 +72,23 @@ class MjDroneEnv(gym.Env):
         return self.observation, info
         
     def reward_func(self):
-        Dist_to_target = math.dist(self.targetLocation,self.data.qpos) # first XYZ elements of qpos
-        DistReward = (5)/(1+Dist_to_target) # Increase the reward as you approach target, and continues reward for staying there
+        # Reward Minimizing distance to target
+        Dist_to_target = math.dist(self.targetLocation,self.data.qpos)
+        DistTerm = 5*(1/(1+Dist_to_target)) # As Dist to target decreases, penalty goes to 0
         
-        # Penalize flipping over/ excessive angular velocity
+        # Reward velocity similarity
         # Angular Velocities are expressed in Radians
-        if Dist_to_target < 0.5:
-            VelocityAbs = abs(self.data.qvel)
-            VelocityValue = sum(VelocityAbs)/len(VelocityAbs)
-            VelocityLog = math.log(VelocityValue,10)
-            VelPenalty = -1*(VelocityLog/1) # no velocity penalty for now
+        VeloAbs = abs(self.targetVel - self.data.qvel)
+        VeloValue = sum(VeloAbs)/len(VeloAbs)
+        VeloTerm = 2*(1/(1+VeloValue)) # as average velocity diff goes to 0, Veloterm reward approaches 2
+        
+        # Discret Award for being at Target
+        if Dist_to_target < 0.05: #Within 5cm of the target
+            Discrete_Reward = 10
         else:
-            VelPenalty = 0
-        # Penalize hovering close to ground
-        if self.data.qpos[2] < .5:
-            HeightPenalty = -1
-        else:
-            HeightPenalty = 0
+            Discrete_Reward = 0
             
-        Reward = DistReward + VelPenalty + HeightPenalty
+        Reward = DistTerm + VeloTerm + Discrete_Reward
         return Reward
     
     def termination_func(self):
@@ -93,6 +96,12 @@ class MjDroneEnv(gym.Env):
         Accelerations = self.data.qacc[0:3]
         if any(Accelerations > 100):
             return True
+        
+        # If we exceed a certain distance from the target location, terminate early.
+        Dist_to_target = math.dist(self.targetLocation,self.data.qpos)
+        if Dist_to_target > 10:
+            return True
+        
         return False
         
     def get_obs(self):
